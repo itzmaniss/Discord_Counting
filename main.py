@@ -66,7 +66,7 @@ async def top(ctx):
     top_math = helper.top(str(ctx.message.guild.id))
     reply = discord.Embed(title="Top Counters!")
     for i in top_math:
-        reply.add_field(name=f"<@!{i[1]}>", value=f"{i[0]} Counts", inline=False)
+        reply.add_field(name=f"{client.get_user(i[1])}", value=f"{i[0]} Counts", inline=False)
     await ctx.send(embed=reply)
     
 @client.command()
@@ -133,11 +133,11 @@ async def set_base(ctx):
 @client.command()
 async def user_stats(ctx):
     try:
-        user = ((ctx.message.mentions)[0]).id
+        user = (ctx.message.mentions)[0]
     except IndexError:
-        user = ctx.message.author.id
-    stats = helper.user_stats(str(ctx.message.guild.id), user)
-    reply = discord.Embed(title=f"{ctx.message.author.name}#{ctx.message.author.discriminator} Stats")
+        user = ctx.message.author
+    stats = helper.user_stats(str(ctx.message.guild.id), user.id)
+    reply = discord.Embed(title=f"{user.name}#{ctx.message.author.discriminator} Stats")
     reply.add_field(name="Last Number Counted", value=f"{stats[0]}", inline=False)
     reply.add_field(name="Number of Counts", value=f"{stats[1]}", inline=False)
     reply.add_field(name="Number of Fails", value=f"{stats[2]}", inline=False)
