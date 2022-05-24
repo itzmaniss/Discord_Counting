@@ -139,7 +139,8 @@ def count(expression:str, guild_id:str, mathematician:int) -> tuple :
     elif (no == number or no == number2) and not (mathematician == last_math):
         new_c = cursor.execute(f"SELECT counts from mathematicians WHERE ID={mathematician}").fetchone()[0] + 1
         new_d = cursor.execute(f"SELECT delta_fail from mathematicians WHERE ID={mathematician}").fetchone()[0] + 1
-        cursor.execute(f"UPDATE mathematicians SET counts={new_c}, high_score={no if no>number else number}, last_count={no}, delta_fail={new_d} WHERE ID={mathematician}")   
+        high = cursor.execute(f"SELECT high_score from mathematicians WHERE ID={mathematician}").fetchone()[0]
+        cursor.execute(f"UPDATE mathematicians SET counts={new_c}, high_score={no if no>high else high}, last_count={no}, delta_fail={new_d} WHERE ID={mathematician}")   
         cursor.execute(f"UPDATE server SET count={no+1}, last_counter={mathematician} WHERE serverID={int(guild_id)}")
         if (is_prime(number or is_prime(number2))):
             new_p = cursor.execute(f"SELECT primes from mathematicians WHERE ID={mathematician}").fetchone()[0] + 1

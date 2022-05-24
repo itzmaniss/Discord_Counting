@@ -6,7 +6,7 @@ import helper
 import glob
 
 with open("token.txt") as f:
-    token = f.readline()
+    TOKEN = f.readline()
 
 
 client = commands.Bot(command_prefix="%")
@@ -137,7 +137,7 @@ async def user_stats(ctx):
     except IndexError:
         user = ctx.message.author.id
     stats = helper.user_stats(str(ctx.message.guild.id), user)
-    reply = discord.Embed(title=f"<@!{user}> stats")
+    reply = discord.Embed(title=f"{ctx.message.author.name}#{ctx.message.author.discriminator} Stats")
     reply.add_field(name="Last Number Counted", value=f"{stats[0]}", inline=False)
     reply.add_field(name="Number of Counts", value=f"{stats[1]}", inline=False)
     reply.add_field(name="Number of Fails", value=f"{stats[2]}", inline=False)
