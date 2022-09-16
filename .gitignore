@@ -1,5 +1,7 @@
 .ipynb_checkpoints
-__pycache__
 *.db
-*.txt
 *.ipynb
+*.pyc
+*.env
+__pycache__/
+venv/
