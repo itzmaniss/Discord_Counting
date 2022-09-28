@@ -12,7 +12,7 @@ import helper
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-client = commands.Bot(command_prefix="%", case_insensitive=True)
+client = commands.Bot(command_prefix=os.getenv("command_prefix"), case_insensitive=True)
 client.remove_command("help")
 
 
@@ -23,35 +23,31 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    await client.process_commands(message)
     if not message.author.bot:  # Ensures message is not sent by a bot
         if (os.getcwd() + "/" + str(message.guild.id) + ".db") not in glob.glob(os.getcwd() + "/*.db"):
             helper.init_db(str(message.guild.id), message.channel.id)
             await message.channel.send("Initialised DB.")
-
-        cc = helper.count_channel(str(message.guild.id))
-        if cc is None:
-            pass
-        elif message.channel.id != cc:
-            return
-        res = helper.count(message.content, str(message.guild.id), int(message.author.id))
-        if res[0] == 69:
-            return
-        elif not res[0]:
-            await message.add_reaction("\U0000274C")
-            await message.channel.send(f"<@{int(message.author.id)}> messed up! Count restarts at 1")
-            await message.author.add_roles(message.guild.get_role(helper.fail_role(str(message.guild.id))),
-                                           "You can't even count", True)
-        elif not res[1]:
-            await message.add_reaction("\U00002705")
-            if res[2]:
-                await message.author.remove_roles(message.guild.get_role(helper.fail_role(str(message.guild.id))))
+        if message.content[0] == os.getenv("command_prefix"):
+            await client.process_commands(message)
         else:
-            await message.add_reaction("\U00002611")
-            if res[2]:
-                await message.author.remove_roles(message.guild.get_role(helper.fail_role(str(message.guild.id))))
-    else:  # Checks if the message is sent by a bot
-        return
+            cc = helper.count_channel(str(message.guild.id))
+            if message.channel.id == cc:
+                res = helper.count(message.content, str(message.guild.id), int(message.author.id))
+                if res[0] == 69:
+                    return
+                elif not res[0]:
+                    await message.add_reaction("\U0000274C")
+                    await message.channel.send(f"<@{int(message.author.id)}> messed up! Count restarts at 1")
+                    await message.author.add_roles(message.guild.get_role(helper.fail_role(str(message.guild.id))),
+                                                   "You can't even count", True)
+                elif not res[1]:
+                    await message.add_reaction("\U00002705")
+                    if res[2]:
+                        await message.author.remove_roles(message.guild.get_role(helper.fail_role(str(message.guild.id))))
+                else:
+                    await message.add_reaction("\U00002611")
+                    if res[2]:
+                        await message.author.remove_roles(message.guild.get_role(helper.fail_role(str(message.guild.id))))
 
 
 @client.command()
@@ -117,15 +113,10 @@ async def fail_top(ctx):
 
 @client.command()
 async def set_channel(ctx):
-    prev = helper.count_channel(str(ctx.message.guild.id))
     if not ctx.message.author.permissions_in(ctx.message.channel).administrator:
         await ctx.send("You're not an Admin.")
         return
-    elif prev is None:
-        pass
-    elif ctx.message.channel.id != prev:
-        await ctx.send(f"Please run this command in the current counting channel, <#{prev}>.")
-        return
+
     try:
         ctx.message.raw_channel_mentions[0]
     except IndexError:
@@ -141,14 +132,8 @@ async def set_channel(ctx):
 
 @client.command()
 async def set_fail_role(ctx):
-    prev = helper.count_channel(str(ctx.message.guild.id))
     if not ctx.message.author.permissions_in(ctx.message.channel).administrator:
         await ctx.send("You're not an Admin.")
-        return
-    elif prev is None:
-        pass
-    elif ctx.message.channel.id != prev:
-        await ctx.send(f"Please run this command in the current counting channel, <#{prev}>.")
         return
 
     try:
@@ -201,14 +186,8 @@ async def rnd(ctx):
 
 @client.command()
 async def set_frrc(ctx):
-    prev = helper.count_channel(str(ctx.message.guild.id))
     if not ctx.message.author.permissions_in(ctx.message.channel).administrator:
         await ctx.send("You're not an Admin.")
-        return
-    elif prev is None:
-        pass
-    elif ctx.message.channel.id != prev:
-        await ctx.send(f"Please run this command in the current counting channel, <#{prev}>.")
         return
 
     data = ctx.message.content.split()

@@ -3,7 +3,6 @@ import math
 import sqlite3
 
 import numpy
-from py_expression_eval import Parser
 from word2number import w2n
 
 meth = {"ceil": math.ceil, "comb": math.comb, "copysign": math.copysign, "fabs": math.fabs, "factorial": math.factorial,
@@ -47,8 +46,6 @@ meth = {"ceil": math.ceil, "comb": math.comb, "copysign": math.copysign, "fabs":
         "numpysign": numpy.sign, "numpyheaviside": numpy.heaviside, "numpyreal_if_close": numpy.real_if_close,
         "numpyinterp": numpy.interp}
 # stopped at FPR
-
-parser = Parser()
 
 
 def top(guild_id: str) -> tuple:
@@ -174,10 +171,7 @@ def count(expression: str, guild_id: str, mathematician: int) -> tuple:
         cursor.execute(
             f"INSERT INTO mathematicians (ID, fails, counts, high_score, last_fail, last_fail_date, last_count, delta_fail, primes) VALUES ({mathematician}, 0, 0, 0, 0, 'None', 0, 0, 0)")
         db.commit()
-    try:
-        number = parser.parse(expression).evaluate({})
-    except:
-        number = 0
+
     try:
         number2 = eval(expression, {}, meth)
     except:
@@ -197,9 +191,9 @@ def count(expression: str, guild_id: str, mathematician: int) -> tuple:
     last_math = cursor.fetchone()[0]
     last_math = int(last_math if last_math is not None else 0)
 
-    if number == 0 and number2 == 0 and number4 == 0:
+    if number2 == 0 and number4 == 0:
         return 69, None, None
-    elif (no in (number, number2, number4)) and not (mathematician == last_math):
+    elif (no in (number2, number4)) and not (mathematician == last_math):
         m_count, m_delta, m_fail_date, m_high = cursor.execute(
             f"SELECT counts, delta_fail, last_fail_date, high_score from mathematicians WHERE ID={mathematician}").fetchone()
         s_delta_count, s_delta_time, s_count, s_high = cursor.execute(
@@ -208,7 +202,7 @@ def count(expression: str, guild_id: str, mathematician: int) -> tuple:
             f"UPDATE mathematicians SET counts={m_count + 1}, high_score={no if no > m_high else m_high}, last_count={no}, delta_fail={m_delta + 1} WHERE ID={mathematician}")
         cursor.execute(
             f"UPDATE server SET count={no + 1}, counts={s_count + 1}, last_counter={mathematician}, high_score={no + 1 if no + 1 > s_high else s_high} WHERE serverID={int(guild_id)}")
-        if is_prime(number) or is_prime(number2) or is_prime(number4):
+        if is_prime(number2) or is_prime(number4):
             s_prime = cursor.execute(f"SELECT primes from server WHERE serverID={int(guild_id)}").fetchone()[0]
             m_prime = cursor.execute(f"SELECT primes from mathematicians WHERE ID={mathematician}").fetchone()[0]
             cursor.execute(f"UPDATE mathematicians SET primes={m_prime + 1} WHERE ID={mathematician}")
@@ -221,7 +215,7 @@ def count(expression: str, guild_id: str, mathematician: int) -> tuple:
             reset = False
         db.commit()
         db.close()
-        return True, (is_prime(number) or is_prime(number2) or is_prime(number4)), reset
+        return True, (is_prime(number2) or is_prime(number4)), reset
     else:
         s_fail = cursor.execute(f"SELECT fails from server WHERE serverID={int(guild_id)}").fetchone()[0]
         m_fail = cursor.execute(f"SELECT fails from mathematicians WHERE ID={mathematician}").fetchone()[0]
