@@ -1,0 +1,4 @@
+python-dotenv==1.0.1
+discord==2.3.2
+numpy==2.0.2
+word2number==1.1

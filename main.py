@@ -1,224 +1,293 @@
-import math
-import os
-import random
-import glob
+from logger import Logger
+from helper import CounterUtils
 
 import discord
 from discord.ext import commands
+from datetime import datetime
 from dotenv import load_dotenv
-
-import helper
+import os
+import logging
 
 load_dotenv()
-TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-client = commands.Bot(command_prefix=os.getenv("command_prefix"), case_insensitive=True)
-client.remove_command("help")
+class DiscordBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True
 
+        super().__init__(
+            command_prefix=os.getenv("command_prefix"), intents=intents, help_command=None
+        )
 
-@client.event
-async def on_ready():
-    print("We are online")
+        self.logger = logging.getLogger("DiscordBot")
+        self.startup_time = datetime.now()
 
+    async def setup_hook(self):
+        await self.tree.sync()
+        self.logger.info("Synced command tree.")
 
-@client.event
-async def on_message(message):
-    if not message.author.bot:  # Ensures message is not sent by a bot
-        if (os.getcwd() + "/" + str(message.guild.id) + ".db") not in glob.glob(os.getcwd() + "/*.db"):
-            helper.init_db(str(message.guild.id), message.channel.id)
-            await message.channel.send("Initialised DB.")
-        if message.content[0] == os.getenv("command_prefix"):
-            await client.process_commands(message)
-        else:
-            cc = helper.count_channel(str(message.guild.id))
-            if message.channel.id == cc:
-                res = helper.count(message.content, str(message.guild.id), int(message.author.id))
-                if res[0] == 69:
-                    return
-                elif not res[0]:
-                    await message.add_reaction("\U0000274C")
-                    await message.channel.send(f"<@{int(message.author.id)}> messed up! Count restarts at 1")
-                    await message.author.add_roles(message.guild.get_role(helper.fail_role(str(message.guild.id))),
-                                                   "You can't even count", True)
-                elif not res[1]:
-                    await message.add_reaction("\U00002705")
-                    if res[2]:
-                        await message.author.remove_roles(message.guild.get_role(helper.fail_role(str(message.guild.id))))
-                else:
-                    await message.add_reaction("\U00002611")
-                    if res[2]:
-                        await message.author.remove_roles(message.guild.get_role(helper.fail_role(str(message.guild.id))))
+    async def on_ready(self):
+        self.logger.info(f"Logged in as {self.user.name} (ID: {self.user.id})")
+        await self.change_presence(
+            activity=discord.Game(name=f"{os.getenv("command_prefix")}help for commands"),
+            status=discord.Status.dnd,
+        )
 
+    def run_bot(self):
+        self.logger.info("Starting bot...")
+        self.run(os.getenv("discord_token"))
 
-@client.command()
-async def help(ctx):
-    reply = discord.Embed(title="The Better Counting Bot")
-    reply.add_field(name="__**Commands**__", value="Admins only! (other than help of course)", inline=False)
-    reply.add_field(name="%help", value="Sends help message", inline=False)
-    reply.add_field(name="%server_stats", value="Gets server's stats.", inline=False)
-    reply.add_field(name="%set_channel", value="Set counting channel, defaults to all", inline=False)
-    reply.add_field(name="%set_fail_role", value="Set role given to person who counts wrongly", inline=False)
-    reply.add_field(name="%user_stats [@user]",
-                    value="Gets user's stats, if no user is mentioned, it gets the sender's stats", inline=False)
-    reply.add_field(name="%set_base",
-                    value="Set the base of the number system to be used. Default Base 10. (Work in progress)",
-                    inline=False)
-    reply.add_field(name="%top", value="Top counters", inline=False)
-    reply.add_field(name="%prime_top", value="Top prime number counters", inline=False)
-    reply.add_field(name="%fail_top", value="Top failures", inline=False)
-    reply.add_field(name="%next_prime", value="Returns the next prime number", inline=False)
-    reply.add_field(name="%rnd [x] [y]", value="Outputs random number from x to y inclusive")
-    reply.add_field(name="%set_frrc [counts] [time]",
-                    value="Set numbers of succesful counts and time in seconds needed since fail to reset fail role.")
-    reply.add_field(name="__**Counting**__",
-                    value="Green tick - Correct \n Blue tick - Correct and prime number \n You cannot count consecutively, even after you mess up. ",
-                    inline=False)
-    reply.add_field(name="__**Special Operators**__",
-                    value="Python math library functions and numpy library functions. For numpy, add 'numpy' before the function, e.g. numpycumsum",
-                    inline=False)
-    await ctx.send(embed=reply)
+class CountingFeature():
+    def __init__(self, bot):
+        super().__init__(bot)
+        self.bot = bot
+        self.logger = Logger("Counting Bot")
+        self.counter = CounterUtils()
+        self.setup_commands()
 
+    def setup_commands(self):
+        @self.bot.command(name="count_help")
+        async def help(ctx):
+            """Show help information for counting commands."""
+            self.logger.info(f"User {ctx.author.name} requested count help")
+            await self.handle_help_command(ctx)
 
-@client.command()
-async def next_prime(ctx):
-    await ctx.send(f"The next prime number is {helper.next_prime(str(ctx.message.guild.id))}")
+        @self.bot.command(name="count_stats")
+        async def stats(ctx, user: discord.Member = None):
+            """Show counting statistics for a user."""
+            target_user = user or ctx.author
+            self.logger.info(
+                f"Stats requested by {ctx.author.name} for user {target_user.name}"
+            )
+            await self.handle_stats_command(ctx, target_user)
 
+        @self.bot.command(name="count_top")
+        async def top(ctx):
+            """Show top counters leaderboard."""
+            self.logger.info(f"Top counters requested by {ctx.author.name}")
+            await self.handle_top_command(ctx)
 
-@client.command()
-async def top(ctx):
-    top_math = helper.top(str(ctx.message.guild.id))
-    reply = discord.Embed(title="Top Counters!")
-    for i in top_math:
-        reply.add_field(name=f"{await client.fetch_user(i[1])}", value=f"{i[0]} Counts", inline=False)
-    await ctx.send(embed=reply)
+        @self.bot.command(name="prime_top")
+        async def prime_top(ctx):
+            """Show top prime number counters leaderboard."""
+            self.logger.info(f"Prime leaderboard requested by {ctx.author.name}")
+            await self.handle_prime_top_command(ctx)
 
+        @self.bot.command(name="fail_top")
+        async def fail_top(ctx):
+            """Show top failure leaderboard."""
+            self.logger.info(f"Fail leaderboard requested by {ctx.author.name}")
+            await self.handle_fail_top_command(ctx)
 
-@client.command()
-async def prime_top(ctx):
-    prime_math = helper.prime_top(str(ctx.message.guild.id))
-    reply = discord.Embed(title="Top Prime Counters!")
-    for i in prime_math:
-        reply.add_field(name=f"{await client.fetch_user(i[1])}", value=f"{i[0]} Prime Numbers", inline=False)
-    await ctx.send(embed=reply)
+        @self.bot.command(name="next_prime")
+        async def next_prime(ctx):
+            """Show the next prime number in the sequence."""
+            self.logger.info(f"Next prime requested by {ctx.author.name}")
+            await self.handle_next_prime_command(ctx)
 
+        @self.bot.event
+        async def on_message(message):
+            if message.author.bot:
+                return
 
-@client.command()
-async def fail_top(ctx):
-    top_fail = helper.top_fail(str(ctx.message.guild.id))
-    reply = discord.Embed(title="Top Failures!")
-    for i in top_fail:
-        reply.add_field(name=f"{await client.fetch_user(i[1])}", value=f"{i[0]} Fails", inline=False)
-    await ctx.send(embed=reply)
+            # Process commands first
+            if message.content.startswith(self.bot.command_prefix):
+                await self.bot.process_commands(message)
+                return
 
+            # Check if this is a counting channel
+            if message.channel.name not in os.getenv("COUNTING_CHANNELS"):
+                return
 
-@client.command()
-async def set_channel(ctx):
-    if not ctx.message.author.permissions_in(ctx.message.channel).administrator:
-        await ctx.send("You're not an Admin.")
-        return
+            # Process the count
+            try:
+                await self.process_count(message)
+            except Exception as e:
+                self.logger.error(f"Error processing count: {e}")
 
-    try:
-        ctx.message.raw_channel_mentions[0]
-    except IndexError:
-        await ctx.send("Mention a channel asshole.")
-    else:
-        if ctx.message.channel_mentions[0] not in ctx.guild.text_channels:
-            await ctx.send("That's not a valid channel idiot.")
+    async def process_count(self, message):
+        """Process a counting message."""
+        self.logger.info(f"Message received from {message.author.name}: {message.content}")
+        
+        # First check if this looks like a counting attempt
+        # Try to evaluate the expression first
+        evaluated_value = self.counter._evaluate_expression(message.content)
+        
+        # If we couldn't evaluate it as a number, treat it as regular chat
+        if evaluated_value is None:
+            # Allow regular chat messages to pass through without any reaction
             return
+                
+        # At this point, we know it's a counting attempt
+        self.logger.info(f"Count attempt from {message.author.name}: {message.content} (evaluated to: {evaluated_value})")
+        
+        # Validate the count
+        result = self.counter.validate_count(
+            str(evaluated_value),
+            str(message.guild.id),
+            str(message.author.id)
+        )
+
+        if not result:
+            self.logger.error(f"Invalid count from {message.author.name}: {message.content} (evaluated to: {evaluated_value})")
+            await message.add_reaction("❌")
+            await message.channel.send(
+                f"{message.author.mention} ruined the count! Starting over from 1.\n"
+                f"Debug info - Your input '{message.content}' evaluated to: {evaluated_value}"
+            )
+            return
+
+        is_valid, is_prime, _ = result
+
+        if is_valid:
+            count_value = evaluated_value
+            self.logger.info(f"Valid count from {message.author.name}: {count_value}" + (" (PRIME)" if is_prime else ""))
+            
+            # Log milestones
+            if count_value % 100 == 0:
+                self.logger.info(f"Century milestone reached: {count_value}")
+            if count_value % 1000 == 0:
+                self.logger.info(f"Millennium milestone reached: {count_value}")
+                
+            if is_prime:
+                await message.add_reaction("🔢")
+            else:
+                await message.add_reaction("✅")
         else:
-            helper.change_count_channel(str(ctx.message.guild.id), ctx.message.raw_channel_mentions[0])
-            await ctx.send(f"Changed counting channel from <#{prev}> to <#{ctx.message.raw_channel_mentions[0]}>")
+            self.logger.error(f"Invalid sequence from {message.author.name}: expected next number")
+            await message.add_reaction("❌")
+            await message.channel.send(
+                f"{message.author.mention} ruined the count! Starting over from 1."
+            )
+
+    async def handle_help_command(self, ctx):
+        """Handle the count_help command."""
+        embed = discord.Embed(
+            title="Counting Bot Help",
+            description="Count numbers sequentially with support for math expressions!",
+            color=0x3498DB,
+        )
+
+        embed.add_field(
+            name="Commands",
+            value="""
+                `/count_help` - Show this help message
+                `/count_stats [@user]` - Show user statistics
+                `/count_top` - Show top counters
+                `/prime_top` - Show top prime counters
+                `/fail_top` - Show top failures
+                `/next_prime` - Show next prime number
+            """,
+            inline=False,
+        )
+
+        embed.add_field(
+            name="Counting Rules",
+            value="""
+                • Type the next number in sequence
+                • No counting twice in a row
+                • Supports math expressions (e.g., `2+2`, `sqrt(16)`)
+                • Supports number words (e.g., 'four', 'twenty')
+                • ✅ - Correct number
+                • 🔢 - Prime number
+                • ❌ - Wrong number
+            """,
+            inline=False,
+        )
+
+        await ctx.send(embed=embed)
+
+    async def handle_stats_command(self, ctx, user: discord.Member):
+        """Handle the count_stats command."""
+        stats = self.counter.get_user_stats(str(ctx.guild.id), str(user.id))
+        if not stats:
+            await ctx.send(f"{user.mention} hasn't counted anything yet!")
+            return
+
+        embed = discord.Embed(
+            title=f"Counting Stats for {user.display_name}", color=0x3498DB
+        )
+
+        embed.add_field(
+            name="Total Counts", value=str(stats["total_counts"]), inline=True
+        )
+        embed.add_field(
+            name="Prime Numbers", value=str(stats["prime_counts"]), inline=True
+        )
+        embed.add_field(
+            name="Failed Counts", value=str(stats["total_fails"]), inline=True
+        )
+        embed.add_field(
+            name="Highest Count", value=str(stats["highest_count"]), inline=True
+        )
+
+        if stats["last_fail_date"]:
+            fail_date = datetime.fromtimestamp(float(stats["last_fail_date"]))
+            embed.add_field(
+                name="Last Fail",
+                value=fail_date.strftime("%Y-%m-%d %H:%M"),
+                inline=True,
+            )
+
+        await ctx.send(embed=embed)
+
+    async def handle_top_command(self, ctx):
+        """Handle the count_top command."""
+        leaders = self.counter.get_leaderboard(str(ctx.guild.id), "counts")
+        await self.send_leaderboard(ctx, "Top Counters", leaders)
+
+    async def handle_prime_top_command(self, ctx):
+        """Handle the prime_top command."""
+        leaders = self.counter.get_leaderboard(str(ctx.guild.id), "primes")
+        await self.send_leaderboard(ctx, "Top Prime Counters", leaders)
+
+    async def handle_fail_top_command(self, ctx):
+        """Handle the fail_top command."""
+        leaders = self.counter.get_leaderboard(str(ctx.guild.id), "fails")
+        await self.send_leaderboard(ctx, "Top Failures", leaders)
+
+    async def send_leaderboard(self, ctx, title: str, leaders):
+        """Helper function to send a leaderboard embed."""
+        if not leaders:
+            await ctx.send("No data available for the leaderboard!")
+            return
+
+        embed = discord.Embed(title=title, color=0x3498DB)
+        for i, (score, user_id) in enumerate(leaders, 1):
+            try:
+                user = await self.bot.fetch_user(int(user_id))
+                embed.add_field(
+                    name=f"#{i} {user.display_name}", value=str(score), inline=False
+                )
+            except discord.NotFound:
+                embed.add_field(
+                    name=f"#{i} Unknown User", value=str(score), inline=False
+                )
+
+        await ctx.send(embed=embed)
+
+    async def handle_next_prime_command(self, ctx):
+        """Handle the next_prime command."""
+        next_prime = self.counter.get_next_prime(str(ctx.guild.id))
+        await ctx.send(f"The next prime number is {next_prime}")
 
 
-@client.command()
-async def set_fail_role(ctx):
-    if not ctx.message.author.permissions_in(ctx.message.channel).administrator:
-        await ctx.send("You're not an Admin.")
-        return
 
-    try:
-        ctx.message.raw_role_mentions[0]
-    except IndexError:
-        await ctx.send("Mention a role asshole.")
-    else:
-        helper.change_fail_role(str(ctx.message.guild.id), ctx.message.raw_role_mentions[0])
-        await ctx.send(f"Changed fail role to <@&{ctx.message.raw_role_mentions[0]}>")
+def main():
+    # Setup logging
+    logger = Logger("Discord Bot")
+    logger.info("Starting bot...")
 
+    # Initialize bot
+    bot = DiscordBot()
 
-@client.command()
-async def set_base(ctx):
-    await ctx.send("Not implemented yet, Base 10 default applies.")
+    # Load feature
+    CountingFeature(bot)
+
+    # Run bot
+    logger.info("Bot initialized, starting...")
+    bot.run_bot()
 
 
-@client.command()
-async def user_stats(ctx):
-    try:
-        user = ctx.message.mentions[0]
-    except IndexError:
-        user = ctx.message.author
-    stats = helper.user_stats(str(ctx.message.guild.id), user.id)
-    reply = discord.Embed(title=f"{user.name}#{user.discriminator} Stats")
-    reply.add_field(name="Last number counted", value=f"{stats[0]}", inline=False)
-    reply.add_field(name="Number of counts", value=f"{stats[1]}", inline=False)
-    reply.add_field(name="Number of fails", value=f"{stats[2]}", inline=False)
-    reply.add_field(name="Highest count", value=f"{stats[3]}", inline=False)
-    reply.add_field(name="Last failed number", value=f"{stats[4]}", inline=False)
-    reply.add_field(name="Last failure date", value=f"{stats[5]}", inline=False)
-    reply.add_field(name="Number of primes counted", value=f"{stats[6]}", inline=False)
-    await ctx.send(embed=reply)
-
-
-@client.command()
-async def rnd(ctx):
-    data = ctx.message.content.split()
-    if len(data) == 1:
-        await ctx.send("Where x and y?")
-    elif len(data) == 2:
-        await ctx.send("Where limit y?")
-
-    x, y = data[1], data[2]
-
-    if y < x:
-        await ctx.send("Invalid range")
-        return
-    await ctx.send(random.randint(math.ceil(float(x)), math.ceil(float(y))))
-
-
-@client.command()
-async def set_frrc(ctx):
-    if not ctx.message.author.permissions_in(ctx.message.channel).administrator:
-        await ctx.send("You're not an Admin.")
-        return
-
-    data = ctx.message.content.split()
-    if len(data) == 1:
-        await ctx.send("Where number of counts?")
-    elif len(data) == 2:
-        await ctx.send("Where time?")
-
-    counts, time = data[1], data[2]
-
-    helper.set_frrc(str(ctx.message.guild.id), int(counts), int(time))
-    await ctx.send(f"Set counts to reset to {counts} and time to reset to {time}s")
-
-
-@client.command()
-async def server_stats(ctx):
-    stats = helper.server_stats(str(ctx.message.guild.id))
-    reply = discord.Embed(title=f"{ctx.message.guild.name} Stats")
-    reply.add_field(name="Number of counts", value=f"{stats[0]}", inline=False)
-    reply.add_field(name="Number of primes counted", value=f"{stats[1]}", inline=False)
-    reply.add_field(name="Number of fails", value=f"{stats[2]}", inline=False)
-    reply.add_field(name="Highest count", value=f"{stats[3]}", inline=False)
-    reply.add_field(name="Fail role", value=f"<@&{stats[4]}>", inline=False)
-    reply.add_field(name="Reset count", value=f"{stats[5]}", inline=False)
-    reply.add_field(name="Reset time", value=f"{stats[6]}", inline=False)
-    await ctx.send(embed=reply)
-
-
-@client.command()
-async def next(ctx):
-    await ctx.send(f"{helper.next(str(ctx.message.guild.id))} is the next number.")
-
-
-client.run(TOKEN)
+if __name__ == "__main__":
+    main()
